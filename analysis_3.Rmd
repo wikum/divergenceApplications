@@ -1,0 +1,183 @@
+---
+title: 'divergence'
+header-includes:
+   - \usepackage{tabularx, longtable, graphicx, csquotes, hyperref, color}
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r opts, echo = FALSE}
+knitr::opts_chunk$set(
+  fig.path = "fig/"
+)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.process = function(x) {
+  x2 = sub('-\\d+([.][a-z]+)$', '\\1', x)
+  if (file.rename(x, x2)) x2 else x
+})
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(knitr)
+library(ggplot2)
+library(ggrepel)
+library(gridExtra)
+library(grid)
+library(RColorBrewer)
+library(GSEABase)
+library(gplots)
+library(reshape2)
+
+library(caret)
+
+library(rpart)
+library(randomForest)
+library(divergence.preSE)
+
+ggplot.theme = theme(axis.text.x = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=.5,face="plain"),
+               axis.text.y = element_text(colour="grey20",size=20,angle=0,hjust=1,vjust=0,face="plain"),  
+               axis.title.x = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               axis.title.y = element_text(colour="grey20",size=20,angle=90,hjust=.5,vjust=.5,face="plain"),
+               plot.title = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.text = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.title = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.key.height=unit(1.5, "line"),
+               panel.grid.major = element_line(colour="darkgray"))
+
+```
+
+
+\section{Luminal A vs Luminal B with KEGG pathways}
+
+
+```{r, echo=FALSE}
+
+# load pre processed data
+
+l1 = load("data_1.rda")
+l2 = load("data_3.rda")
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+
+# prepare training data (TCGA) and testing data (microarray)
+
+pheno.div = pheno.exp[colnames(div.exp.KEGG$Mat.div), ]
+
+sel.A = rownames(pheno.div)[which(pheno.div$PAM50_mRNA_nature2012 == "Luminal A")]
+sel.B = rownames(pheno.div)[which(pheno.div$PAM50_mRNA_nature2012 == "Luminal B")]
+
+df.train = data.frame(sample=c(sel.A, sel.B), group=pheno.div[c(sel.A, sel.B), "PAM50_mRNA_nature2012"])
+
+chi.luminal = computeChiSquaredTest(Mat=div.exp.KEGG$Mat.div[, df.train$sample],
+                                    Groups=df.train$group,
+                                    classes=c("Luminal A", "Luminal B"))
+
+df.test = data.frame(sample=names(groups.all)[which(groups.all %in% c("Luminal A", "Luminal B"))], 
+                     group=groups.all[which(groups.all %in% c("Luminal A", "Luminal B"))])
+
+```
+
+
+\subsection{Decision Tree}
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+
+# select top 20 pathways
+
+sel.path = rownames(chi.luminal)[1:20]
+
+# fit tree
+
+fit.tree = rpart(group ~ ., method="class", 
+              data=data.frame(t(div.exp.KEGG$Mat.div[sel.path, df.train$sample]), group=df.train$group))
+
+# training results
+
+pred.train = predict(fit.tree, data.frame(t(div.exp.KEGG$Mat.div[, df.train$sample])), type="class")
+
+stat.train = rutils::utils.get_prediction_stats(predictions=factor(pred.train), 
+                                                truth=factor(df.train$group), 
+                                                controlClass="Luminal A", caseClass="Luminal B")
+
+
+# testing results
+
+pred.test = predict(fit.tree, data.frame(t(div.mic.KEGG$Mat.div[, df.test$sample])), type="class")
+
+stat.test = rutils::utils.get_prediction_stats(predictions=factor(pred.test), 
+                                                truth=factor(df.test$group), 
+                                                controlClass="Luminal A", caseClass="Luminal B")
+
+
+kable(rbind(train=stat.train, test=stat.test))
+
+```
+
+
+```{r luminal_tree, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+# plot tree
+
+rattle::fancyRpartPlot(fit.tree, caption="")
+
+```
+
+\subsection{Random Forest}
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+
+# select pathways
+
+sel.path = rownames(chi.luminal)[1:20]
+
+# train rf
+
+fit.tree = randomForest(group ~ ., ntree=10, 
+               data=data.frame(t(div.exp.KEGG$Mat.div[sel.path, df.train$sample]), group=factor(df.train$group)))
+
+
+# training results
+
+pred.train = predict(fit.tree, data.frame(t(div.exp.KEGG$Mat.div[, df.train$sample])), type="class")
+
+stat.train = rutils::utils.get_prediction_stats(predictions=factor(pred.train), 
+                                                truth=factor(df.train$group), 
+                                                controlClass="Luminal A", caseClass="Luminal B")
+
+# testing results
+
+pred.test = predict(fit.tree, data.frame(t(div.mic.KEGG$Mat.div[, df.test$sample])), type="class")
+
+stat.test = rutils::utils.get_prediction_stats(predictions=factor(pred.test), 
+                                                truth=factor(df.test$group), 
+                                                controlClass="Luminal A", caseClass="Luminal B")
+
+
+kable(rbind(train=stat.train, test=stat.test))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -189,34 +189,6 @@ print(summary(cox))
 
 
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=4}
-
-sm = summary(cox)
-
-u = data.frame(sm$coefficients)
-colnames(u) = colnames(sm$coefficients)
-colnames(u)[ncol(u)] = "prob"
-
-u = u[order(u$prob), ]
-
-u$prob = round(u$prob, 6)
-u$coef = round(u$coef, 3)
-u$`se(coef)` = round(u$`se(coef)`, 3)
-u$z = round(u$z, 3)
-u$`exp(coef)` = round(u$`exp(coef)`, 3)
-
-print(u)
-
-```
-
-
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=4}
-
-write.csv(u, file="cox.coef.txt")
-
-```
-
-
 ```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=6}
 
 # divergence probabilities for selected genes

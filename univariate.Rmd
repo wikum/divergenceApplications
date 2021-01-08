@@ -1,0 +1,313 @@
+---
+title: 'divergence'
+header-includes:
+   - \usepackage{tabularx, longtable, graphicx, csquotes, hyperref, color}
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r opts, echo = FALSE}
+knitr::opts_chunk$set(
+  fig.path = "fig/"
+)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.process = function(x) {
+  x2 = sub('-\\d+([.][a-z]+)$', '\\1', x)
+  if (file.rename(x, x2)) x2 else x
+})
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(knitr)
+library(ggplot2)
+library(ggrepel)
+library(gridExtra)
+library(grid)
+library(RColorBrewer)
+library(GSEABase)
+library(gplots)
+library(reshape2)
+
+ggplot.theme = theme(axis.text.x = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=.5,face="plain"),
+               axis.text.y = element_text(colour="grey20",size=20,angle=0,hjust=1,vjust=0,face="plain"),  
+               axis.title.x = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               axis.title.y = element_text(colour="grey20",size=20,angle=90,hjust=.5,vjust=.5,face="plain"),
+               plot.title = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.text = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.title = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.key.height=unit(1.5, "line"),
+               panel.grid.major = element_line(colour="darkgray"))
+
+```
+
+
+\section{Univariate divergence workflow}
+
+```{r, echo=FALSE}
+
+l1 = load("data_1.rda")
+
+```
+
+\subsection{Sample divergence and ER status}
+
+```{r fig1, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=6, results='asis'}
+
+sel.ER = which(pheno.exp$ER_Status_nature2012 %in% c("Negative", "Positive"))
+sel.ER.samples = rownames(pheno.exp)[sel.ER]
+
+df = data.frame(
+  ER=c(pheno.exp$ER_Status_nature2012[sel.ER], 
+       pheno.exp$ER_Status_nature2012[sel.ER], 
+       pheno.exp$ER_Status_nature2012[sel.ER]),
+  div=c(colSums(abs(div.exp$Mat.div[, sel.ER.samples])), 
+        colSums(div.exp$Mat.div[, sel.ER.samples] > 0), 
+        colSums(div.exp$Mat.div[, sel.ER.samples] < 0)),
+  type=c(rep(c("Divergence", "Upper Divergence Only", "Lower Divergence Only"), each=length(sel.ER.samples)))
+)
+
+ggplot(df, aes(x=ER, y=div))+
+  geom_boxplot()+
+  ylab("number of divergent features")+
+  ggplot.theme+
+  facet_wrap(~type)
+
+
+rm(df)
+
+```
+
+\subsection{Sample divergence with clinical covariates}
+
+```{r fig2, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6, results='asis'}
+
+sel.samples = intersect(colnames(div.exp$Mat.div), rownames(data.pheno.old))
+
+df = data.frame(sample=sel.samples,
+                normal=apply(data.pheno.old[sel.samples, grep("percent_normal_cells", colnames(data.pheno.old))], 1, function(x) max(x, na.rm=TRUE)),
+                tumor=apply(data.pheno.old[sel.samples, grep("percent_tumor_cells", colnames(data.pheno.old))], 1, function(x) max(x, na.rm=TRUE)),
+                div=colSums(abs(div.exp$Mat.div[, sel.samples]))
+)
+
+sel.complete.normal = is.finite(df$normal) & is.finite(df$div)
+sel.complete.tumor = is.finite(df$tumor) & is.finite(df$div)
+
+grid.arrange(
+  ggplot(df, aes(y=normal, x=div))+
+  geom_point(col="gray40")+
+  ylab("normal cell %")+xlab("number of divergent features")+
+  ggplot.theme,
+  
+  ggplot(df, aes(y=tumor, x=div))+
+  geom_point(col="gray20")+
+  ylab("tumor cell %")+xlab("number of divergent features")+
+  ggplot.theme,
+  
+  ncol=2
+)
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+print(cor.test(df$normal[sel.complete.normal], df$div[sel.complete.normal], method="spearman"))
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+print(cor.test(df$tumor[sel.complete.tumor], df$div[sel.complete.tumor], method="spearman"))
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+rm(df)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+sel.samples = intersect(colnames(div.exp$Mat.div), rownames(data.pheno.old))
+
+df = data.frame(sample=sel.samples, 
+                stromal=apply(data.pheno.old[sel.samples, grep("percent_stromal_cells", colnames(data.pheno.old))], 1, function(x) max(x, na.rm=TRUE)),
+                div=colSums(abs(div.exp$Mat.div[, sel.samples]))
+)
+
+sel.complete.stromal = is.finite(df$stromal) & is.finite(df$div)
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+print(cor.test(df$stromal[sel.complete.stromal], df$div[sel.complete.stromal], method="spearman"))
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+rm(df)
+
+```
+
+Correlation with xCell cell type scores:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+xc = read.csv("xcell/13059_2017_1349_MOESM6_ESM.tsv", sep="\t")
+
+xc.mat = data.matrix(xc[, -1])
+rownames(xc.mat) = xc[, 1]
+
+sel.samples = intersect(colnames(xc.mat), colnames(div.exp$Mat.div))
+
+div.sum = colSums(abs(div.exp$Mat.div[, sel.samples]))
+
+div.cor = apply(xc.mat[, sel.samples], 1, function(x) cor(x, div.sum, method="spearman"))
+div.cor.p = apply(xc.mat[, sel.samples], 1, function(x) cor.test(x, div.sum, method="spearman")$p.value)
+
+div.cor = div.cor[order(abs(div.cor), decreasing=TRUE)]
+
+df.cor = data.frame(cbind(cell=names(div.cor), correlation=round(div.cor, 3)), row.names=NULL)
+
+df.cor = df.cor[1:20, ]
+
+df.cor = df.cor[order(df.cor$correlation, decreasing=TRUE), ]
+
+kable(df.cor, row.names=FALSE)
+
+```
+
+
+\subsection{Chi-squared test between ER status}
+
+```{r fig3, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=10, results='asis'}
+
+sel.ER = which(pheno.exp$ER_Status_nature2012 %in% c("Negative", "Positive"))
+sel.ER.samples = rownames(pheno.exp)[sel.ER]
+
+groups.ER = pheno.exp$ER_Status_nature2012[sel.ER]
+
+chi.ER = divergence.preSE::computeChiSquaredTest(Mat=div.exp$Mat.div[, sel.ER.samples], 
+                                           Groups=groups.ER, 
+                                           classes=c("Positive", "Negative"))
+
+df = data.frame(
+  gene=rownames(div.exp$Mat.div),
+  pPOS=rowMeans(abs(div.exp$Mat.div[, sel.ER.samples[which(groups.ER == "Positive")]])),
+  pNEG=rowMeans(abs(div.exp$Mat.div[, sel.ER.samples[which(groups.ER == "Negative")]])),
+  chi.ER[rownames(div.exp$Mat.div), ]
+)
+df$padj = p.adjust(df$pval, method="bonferroni")
+df = df[order(df$padj), ]
+df$sig = factor(df$padj <= 0.05, levels=c(NA, "FALSE", "TRUE", "ESR1", "X"))
+df$sig[which(df$gene == "ESR1")] = "ESR1"
+df$sig[which(df$padj <= 0.05 & (rank(abs(df$pPOS-df$pNEG)) <= 5000) )] = "X"
+
+df$gene2 = as.character(df$gene)
+df$gene2[which(! (rank(df$pPOS-df$pNEG) <= 20 | rank(df$pNEG-df$pPOS) <= 20))] = NA
+
+df = df[order(df$sig), ]
+
+ggplot(df, aes(x=pPOS, y=pNEG, col=sig))+
+  geom_point()+
+  geom_abline(slope=1)+
+  scale_color_manual(name="", values=c("gray", "steelblue", "red", "steelblue"))+
+  geom_text_repel(aes(x=pPOS, y=pNEG, label=gene2))+
+  xlab("divergent probability, ER+")+
+  ylab("divergent probability, ER-")+
+  ggplot.theme+theme(legend.position="none")
+
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
+
+df = df[order(df$padj), ]
+
+kable(df[1:10, 1:6], row.names=FALSE)
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+rm(df)
+
+```
+
+
+\subsection{Divergence - expression scatterplots}
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+sel.genes = c("ACADSB", "PSAT1")
+
+plots.list = lapply(sel.genes, function(g){
+
+  df.temp.1 = data.frame(x=mat.exp["ESR1", sel.ER.samples], y=mat.exp[g, sel.ER.samples], ER=groups.ER)
+  df.temp.1 = df.temp.1[order(df.temp.1$ER, decreasing=TRUE), ]
+
+  df.temp.2 = data.frame(x=div.exp$Mat.div["ESR1", sel.ER.samples], y=div.exp$Mat.div[g, sel.ER.samples], ER=groups.ER)
+  df.temp.2 = df.temp.2[order(df.temp.2$ER, decreasing=TRUE), ]
+  
+  list(
+
+  ggplot(df.temp.1)+
+  geom_point(aes(x=x, y=y, col=ER))+
+  xlab("ESR1")+ylab(g)+ggtitle("expression (log2)")+
+  ggplot.theme+
+  theme(legend.position="bottom"),
+
+  ggplot(df.temp.2)+
+  geom_point(aes(x=x, y=y, col=ER), position=position_jitter(width=0.2, height=0.2))+
+  xlab("ESR1")+ylab(g)+ggtitle("divergence coding")+
+  xlim(-1.25, 1.25)+ylim(-1.25, 1.25)+
+  ggplot.theme+
+  theme(legend.position="bottom")
+
+  )
+
+})
+names(plots.list) = sel.genes
+
+```
+
+
+```{r fig4, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+grid.arrange(grobs=plots.list[[1]], ncol=2, 
+             top=textGrob(names(plots.list)[1], gp=gpar(fontsize=15,font=8)))
+
+
+```
+
+
+```{r fig5, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+grid.arrange(grobs=plots.list[[2]], ncol=2, 
+             top=textGrob(names(plots.list)[2], gp=gpar(fontsize=15,font=8)))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+

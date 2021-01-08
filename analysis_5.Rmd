@@ -1,0 +1,151 @@
+---
+title: 'divergence'
+header-includes:
+   - \usepackage{tabularx, longtable, graphicx, csquotes, hyperref, color}
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r opts, echo = FALSE}
+knitr::opts_chunk$set(
+  fig.path = "fig/"
+)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.process = function(x) {
+  x2 = sub('-\\d+([.][a-z]+)$', '\\1', x)
+  if (file.rename(x, x2)) x2 else x
+})
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(knitr)
+library(ggplot2)
+library(ggrepel)
+library(gridExtra)
+library(grid)
+library(RColorBrewer)
+library(GSEABase)
+library(gplots)
+library(reshape2)
+
+library(fgsea)
+
+ggplot.theme = theme(axis.text.x = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=.5,face="plain"),
+               axis.text.y = element_text(colour="grey20",size=20,angle=0,hjust=1,vjust=0,face="plain"),  
+               axis.title.x = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               axis.title.y = element_text(colour="grey20",size=20,angle=90,hjust=.5,vjust=.5,face="plain"),
+               plot.title = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.text = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.title = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.key.height=unit(1.5, "line"),
+               panel.grid.major = element_line(colour="darkgray"))
+
+```
+
+
+```{r, echo=FALSE}
+
+# load pre processed data
+
+l1 = load("data_1.rda")
+
+# select ER samples
+
+sel.ER = which(pheno.exp$ER_Status_nature2012 %in% c("Negative", "Positive"))
+sel.ER.samples = rownames(pheno.exp)[sel.ER]
+
+groups.ER = pheno.exp$ER_Status_nature2012[sel.ER]
+
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+
+align_fgs = function(A, B, stat="ES"){
+    
+    A = as.data.frame(A)
+    B = as.data.frame(B)
+
+    rownames(A) = A$pathway
+    rownames(B) = B$pathway
+    
+    u = intersect(A$pathway, B$pathway)
+    v1 = A[u, stat]  
+    v2 = B[u, stat]
+  
+    df = data.frame(row.names=u, pathway=u, x=v1, y=v2)
+    df = df[which(is.finite(df$x) & is.finite(df$y)), ]
+    colnames(df)[2] = sprintf("A_%s", stat)
+    colnames(df)[3] = sprintf("B_%s", stat)
+    df  
+}
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=15}
+
+# gsea using divergence probabilities
+
+sel.ER = which(pheno.exp$sample_type == "Primary Tumor" & pheno.exp$ER_Status_nature2012 %in% c("Negative", "Positive"))
+groups = as.character(pheno.exp$ER_Status_nature2012)[sel.ER]
+names(groups) = rownames(pheno.exp)[sel.ER]
+
+dpPOS = rowMeans(div.exp$Mat.div[, names(groups)[which(groups == "Positive")]])
+dpNEG = rowMeans(div.exp$Mat.div[, names(groups)[which(groups == "Negative")]])
+  
+fgsPOS = fgsea(pathways=genesets.CGP,
+                 stats=dpPOS,
+                 nperm=1000)
+  
+  
+fgsNEG = fgsea(pathways=genesets.CGP,
+                 stats=dpNEG,
+                 nperm=1000)
+
+df.ES = align_fgs(fgsPOS, fgsNEG, stat="ES")
+
+df.P = align_fgs(fgsPOS, fgsNEG, stat="padj")
+
+sel.gset = intersect(rownames(df.ES), rownames(df.P))
+
+df = data.frame(pathway=sel.gset, df.ES[sel.gset, c("A_ES", "B_ES")], df.P[sel.gset, c("A_padj", "B_padj")])
+
+```
+
+
+```{r fig_gsea, echo=FALSE, message=FALSE, warning=FALSE, fig.width=15, fig.height=15}
+
+# select genesets with different enrichment signs
+
+df$sig = df$A_padj < 0.05 & df$B_padj < 0.05
+
+sel.label = df$sig & (sign(df$A_ES) != sign(df$B_ES))
+
+ggplot(df, aes(x=A_ES, y=B_ES, col=sig))+
+  geom_point(size=3)+
+  geom_text_repel(data=df[which(sel.label), ], aes(x=A_ES, y=B_ES, col=sig, label=pathway), size=7)+
+  scale_color_manual(name="", values=c("gray20", "maroon"))+
+  xlab("ER+")+ylab("ER-")+ggtitle("Enrichment scores")+
+  ggplot.theme+guides(col=FALSE)
+  
+```
+
+
+
+
+
+
+
+
+
+
+
+
