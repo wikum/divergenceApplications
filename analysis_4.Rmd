@@ -1,0 +1,238 @@
+---
+title: 'divergence'
+header-includes:
+   - \usepackage{tabularx, longtable, graphicx, csquotes, hyperref, color}
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r opts, echo = FALSE}
+knitr::opts_chunk$set(
+  fig.path = "fig/"
+)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.process = function(x) {
+  x2 = sub('-\\d+([.][a-z]+)$', '\\1', x)
+  if (file.rename(x, x2)) x2 else x
+})
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(knitr)
+library(ggplot2)
+library(ggrepel)
+library(gridExtra)
+library(grid)
+library(RColorBrewer)
+library(GSEABase)
+library(gplots)
+library(reshape2)
+library(survival)
+
+ggplot.theme = theme(axis.text.x = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=.5,face="plain"),
+               axis.text.y = element_text(colour="grey20",size=20,angle=0,hjust=1,vjust=0,face="plain"),  
+               axis.title.x = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               axis.title.y = element_text(colour="grey20",size=20,angle=90,hjust=.5,vjust=.5,face="plain"),
+               plot.title = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.text = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.title = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=0,face="plain"),
+               legend.key.height=unit(1.5, "line"),
+               panel.grid.major = element_line(colour="darkgray"))
+
+```
+
+
+```{r, echo=FALSE}
+
+l1 = load("data_1.rda")
+l2 = load("data_2.rda")
+l3 = load("div.met.gene.rda")
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=6}
+
+# combine methylation and gene expression divergence
+
+genes.cpg.map.2_uni = unlist(genes.cpg.map.2_uni)
+
+tempA = abs(div.met$Mat.div[genes.cpg.map.2_uni, ])
+rownames(tempA) = names(genes.cpg.map.2_uni)
+
+tempB = div.met.gene$Mat.div
+
+div.met.gene.mat = rbind(tempA, tempB)
+
+sel.samples = intersect(colnames(div.met.gene.mat), colnames(div.exp$Mat.div))
+sel.genes = intersect(rownames(div.met.gene.mat), rownames(div.exp$Mat.div))
+
+div.comb = 1 * (div.met.gene.mat[sel.genes, sel.samples] + abs(div.exp$Mat.div[sel.genes, sel.samples]) == 2)
+
+pheno.comb = data.pheno[colnames(div.comb), ]
+
+# select stage I/II samples and survival info
+
+sel.id = which(pheno.comb$AJCC_Stage_nature2012 %in% c("Stage I", "Stage IA", "Stage IB", "Stage II", "Stage IIA", "Stage IIB"))
+
+pheno.surv = pheno.comb[sel.id, ]
+
+pheno.surv = pheno.surv[which(is.finite(pheno.surv$RFS) & is.finite(pheno.surv$RFS.time)), ]
+
+df.surv = data.frame(sample=rownames(pheno.surv), time=pheno.surv$RFS.time/365, event=pheno.surv$RFS,
+                     lymph=1 * pheno.surv$number_of_lymphnodes_positive_by_he > 0,
+                     ER=pheno.surv$ER_Status_nature2012)
+
+
+# select censored samples with time > 3 years
+
+sel.samples.2 = which(
+  df.surv$event == 1 | (df.surv$event == 0 & df.surv$time >= 3)
+)
+
+df.surv.2 = df.surv[sel.samples.2, ]
+
+# divergence probabilities for the two groups
+
+df.divp = data.frame(gene=rownames(div.comb), 
+                     E1=rowMeans(div.comb[, df.surv.2$sample[which(df.surv.2$event == 1)]]),
+                     E0=rowMeans(div.comb[, df.surv.2$sample[which(df.surv.2$event == 0)]])
+                     )
+
+
+# genes with at least 0.3 divergence in one group
+
+v = df.divp$gene[which(apply(as.matrix(df.divp[, 2:3]), 1, max) > 0.3)]
+
+# chi-squared tests
+
+chi = divergence.preSE::computeChiSquaredTest(Mat=div.comb[v, df.surv.2$sample],
+                                              Groups=factor(df.surv.2$event),
+                                              classes=0:1)
+
+df.divp[rownames(chi)[1:20], ]
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=4}
+
+# select genes
+
+selv = rownames(chi)[1:20]
+
+Z = div.comb[selv, df.surv$sample]
+
+# how well do these genes fit individually to a cox model?
+
+selv.p = sapply(selv, function(x){
+  cox = coxph(Surv(time, event) ~ exp, data = data.frame(time=df.surv$time,
+                                                     event=df.surv$event,
+                                                     exp=Z[x, ]))
+  summary(cox)$coefficients[5]
+})
+
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=4}
+
+# order genes
+
+selv = selv[order(selv.p)] 
+
+# add genes iteratively to a cox model
+
+gv = c()
+for(i in 1:length(selv)){
+  
+  g.current = selv[i]
+  
+  cox = coxph(Surv(time, event) ~ ., data = data.frame(time=df.surv$time,
+                                                     event=df.surv$event,
+                                                     t(Z[c(gv, g.current), , drop=FALSE])))
+
+  sm = summary(cox)$coefficients
+  if(all(sm[, ncol(sm)] <= 0.05)){
+    gv = c(gv, g.current)
+  }
+    
+}
+
+# final model
+
+cox = coxph(Surv(time, event) ~ ., data = data.frame(time=df.surv$time,
+                                                     event=df.surv$event,
+                                                     t(Z[gv, , drop=FALSE])))
+
+sm = summary(cox)$coefficients
+
+
+#kable(sm)
+
+```
+
+model summary:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=4}
+
+print(summary(cox))
+
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=4}
+
+sm = summary(cox)
+
+u = data.frame(sm$coefficients)
+colnames(u) = colnames(sm$coefficients)
+colnames(u)[ncol(u)] = "prob"
+
+u = u[order(u$prob), ]
+
+u$prob = round(u$prob, 6)
+u$coef = round(u$coef, 3)
+u$`se(coef)` = round(u$`se(coef)`, 3)
+u$z = round(u$z, 3)
+u$`exp(coef)` = round(u$`exp(coef)`, 3)
+
+print(u)
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=4}
+
+write.csv(u, file="cox.coef.txt")
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=6}
+
+# divergence probabilities for selected genes
+
+df.divp$sel = df.divp$gene %in% gv
+
+ggplot(df.divp, aes(x=E0, y=E1, col=sel))+
+  geom_point()+
+  geom_text_repel(data=df.divp[which(df.divp$sel == TRUE), ], aes(x=E0, y=E1, col=sel, label=gene))+
+  xlab("censored (time > 3 years)")+ylab("relapsed")+
+  ggplot.theme+guides(col=FALSE)
+
+```
+
+
+
+
+
+
