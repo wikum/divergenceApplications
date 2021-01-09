@@ -57,30 +57,12 @@ ggplot.theme = theme(axis.text.x = element_text(colour="grey20",size=20,angle=0,
 
 l1 = load("data_1.rda")
 l2 = load("data_2.rda")
+l3 = load("data_3.rda")
 
 ```
 
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
-
-# assemble cpg data
-
-cpgs.all = unique(data.cpg.ann$id)
-
-cpg.ann.list = lapply(cpgs.all, function(x){
-  y = which(data.cpg.ann$id == x)
-  list(
-  cpg = x,
-  chr = data.cpg.ann$seqnames[ y[1] ],
-  start = data.cpg.ann$start[ y[1] ],
-  annot.strand = unique(data.cpg.ann$annot.strand[y]),
-  annot.width = unique(data.cpg.ann$annot.width[y]),
-  annot.symbol = unique(data.cpg.ann$annot.symbol[y]),
-  annot.type = unique(data.cpg.ann$annot.type[y]),
-  annot.dist = unique(data.cpg.ann$DistanceFromAnn[y])
-  )
-})
-names(cpg.ann.list) = cpgs.all
 
 # select cpgs available in TCGA data
 
@@ -129,10 +111,10 @@ df.bump = data.frame(sample=colnames(mat.met)[c(sel.normal, sel.tumor)],
                      group=c(rep("NORMAL", length(sel.normal)), rep("TUMOR", length(sel.tumor)) ) )
 mod.bump = model.matrix(~group, df.bump)
 
-m = 500
+m = 1000
 mat.rand = sapply(1:m, function(j) sample(1:nrow(mat.met)))
 
-save(mat.met, df.bump, mod.bump, cpg.chr, cpg.pos, cpg.clusts, mat.rand, file="data_bump_1.rda")
+#save(mat.met, df.bump, mod.bump, cpg.chr, cpg.pos, cpg.clusts, mat.rand, file="data_bump_1.rda")
 
 bumps = bumphunter(mat.met[, df.bump$sample],
                    design=mod.bump, chr=cpg.chr, pos=cpg.pos, cluster=cpg.clusts, maxGap=300,
@@ -205,6 +187,8 @@ top.df = data.frame(t(sapply(sel.cl, function(x){
 
 ```{r fig_clust_area, echo=FALSE, message=FALSE, warning=FALSE, fig.width=6, fig.height=6, results='asis'}
 
+# plot cluster divergence vs bumphunter cluster area
+
 ggplot(data.frame(x=df.bp$area, y=df.sum$value2), aes(x=x, y=y))+
   geom_point(size=2)+
   xlab("cluster area (bumphunter)")+
@@ -214,15 +198,6 @@ ggplot(data.frame(x=df.bp$area, y=df.sum$value2), aes(x=x, y=y))+
 ```
 
 
-```{r fig_clust_value, echo=FALSE, message=FALSE, warning=FALSE, fig.width=7, fig.height=6, results='asis'}
-
-ggplot(data.frame(x=df.bp$value, y=df.sum$value.norm), aes(x=x, y=y))+
-  geom_point(size=2)+
-  xlab("cluster max value (bumphunter)")+
-  ylab("cluster normalized divergence sum")+
-  ggplot.theme
-
-```
 
 
 
