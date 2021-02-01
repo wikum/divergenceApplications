@@ -42,10 +42,25 @@
   save(data.met, file="data.met.rda")
   
   
+  # ==================
+  
+  library(SummarizedExperiment)
 
+  mat.exp = log2(assays(data.exp)[[1]]+1)
+  pheno.data = as.data.frame(colData(data.exp))
+  
+  save(mat.exp, pheno.data, file="DATA/biolinks_BRCA_exp.rda")
+  
+  
+  mat.met = assays(data.met)[[1]]
+  pheno.data = as.data.frame(colData(data.met))
+  
+  save(mat.met, pheno.data, file="DATA/biolinks_BRCA_met.rda")
 
-
-
+  
+  
+    
+  
 
 
 
